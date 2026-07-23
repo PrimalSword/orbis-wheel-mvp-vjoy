@@ -91,7 +91,7 @@
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:layout_marginTop="16dp"
-            android:text="Analisar 15m + 5m" />
+            android:text="Analisar e aprender" />
 
         <TextView
             android:id="@+id/regimeText"
@@ -127,6 +127,25 @@
             android:text="Filtro multitemporal: --"
             android:textAppearance="@style/TextAppearance.Material3.BodyLarge"
             android:textStyle="bold" />
+
+        <TextView
+            android:id="@+id/setupScoreText"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="12dp"
+            android:padding="16dp"
+            android:text="Qualidade do setup: --"
+            android:textAppearance="@style/TextAppearance.Material3.BodyLarge"
+            android:textStyle="bold" />
+
+        <TextView
+            android:id="@+id/mentorText"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="12dp"
+            android:padding="16dp"
+            android:text="Modo mentor: --"
+            android:textAppearance="@style/TextAppearance.Material3.BodyLarge" />
 
         <TextView
             android:id="@+id/riskPlanText"
