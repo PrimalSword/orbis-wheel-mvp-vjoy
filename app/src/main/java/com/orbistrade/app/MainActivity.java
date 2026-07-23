@@ -15,8 +15,11 @@ import com.orbistrade.app.domain.assistant.BiasGuard;
 import com.orbistrade.app.domain.assistant.ConfirmationReview;
 import com.orbistrade.app.domain.assistant.EntrySetup;
 import com.orbistrade.app.domain.assistant.EntrySetupPlanner;
+import com.orbistrade.app.domain.assistant.MentorExplainer;
 import com.orbistrade.app.domain.assistant.MultiTimeframeAnalysis;
 import com.orbistrade.app.domain.assistant.MultiTimeframeAnalyzer;
+import com.orbistrade.app.domain.assistant.SetupAssessment;
+import com.orbistrade.app.domain.assistant.SetupScorer;
 import com.orbistrade.app.domain.assistant.TradeThesis;
 import com.orbistrade.app.domain.market.MarketSnapshotFactory;
 import com.orbistrade.app.domain.model.MarketSnapshot;
@@ -36,6 +39,8 @@ public class MainActivity extends AppCompatActivity {
     private final BiasGuard biasGuard = new BiasGuard();
     private final EntrySetupPlanner entrySetupPlanner = new EntrySetupPlanner();
     private final MultiTimeframeAnalyzer multiTimeframeAnalyzer = new MultiTimeframeAnalyzer();
+    private final SetupScorer setupScorer = new SetupScorer();
+    private final MentorExplainer mentorExplainer = new MentorExplainer();
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -61,6 +66,8 @@ public class MainActivity extends AppCompatActivity {
         TextView strategyText = findViewById(R.id.strategyText);
         TextView decisionText = findViewById(R.id.decisionText);
         TextView multiTimeframeText = findViewById(R.id.multiTimeframeText);
+        TextView setupScoreText = findViewById(R.id.setupScoreText);
+        TextView mentorText = findViewById(R.id.mentorText);
         TextView riskPlanText = findViewById(R.id.riskPlanText);
         TextView entrySetupText = findViewById(R.id.entrySetupText);
         TextView biasReviewText = findViewById(R.id.biasReviewText);
@@ -104,6 +111,21 @@ public class MainActivity extends AppCompatActivity {
             RiskProfile profile = new RiskProfile(balance, riskPercent, 2.0, 1.5);
             TradePlan plan = new RiskManager().buildPlan(trigger5m, effectiveDecision, profile);
             EntrySetup setup = entrySetupPlanner.build(trigger5m, effectiveDecision, plan);
+            SetupAssessment assessment = setupScorer.score(
+                    context15m,
+                    trigger5m,
+                    multiTimeframe,
+                    effectiveDecision,
+                    plan
+            );
+            String mentorExplanation = mentorExplainer.explain(
+                    context15m,
+                    trigger5m,
+                    multiTimeframe,
+                    effectiveDecision,
+                    plan,
+                    assessment
+            );
             ConfirmationReview review = biasGuard.review(
                     thesis,
                     trigger5m,
@@ -112,7 +134,7 @@ public class MainActivity extends AppCompatActivity {
                     plan
             );
 
-            statusText.setText("Assistente multitemporal 15m + 5m ativo");
+            statusText.setText("Assistente de análise, risco e aprendizado ativo");
             regimeText.setText(formatMarket(context15m, trigger5m, contextResult, triggerResult));
             strategyText.setText("Estratégia efetiva: " + effectiveDecision.getStrategyName());
             decisionText.setText(
@@ -121,12 +143,16 @@ public class MainActivity extends AppCompatActivity {
                             + "\nMotivo: " + effectiveDecision.getRationale()
             );
             multiTimeframeText.setText(formatMultiTimeframe(multiTimeframe));
+            setupScoreText.setText(formatAssessment(assessment));
+            mentorText.setText("Modo mentor\n" + mentorExplanation);
             riskPlanText.setText(formatPlan(plan));
             entrySetupText.setText(formatSetup(setup));
             biasReviewText.setText(formatReview(thesis, review));
         } catch (IllegalArgumentException exception) {
             statusText.setText("Não foi possível concluir a análise");
             multiTimeframeText.setText("Análise multitemporal indisponível.");
+            setupScoreText.setText("Qualidade do setup indisponível.");
+            mentorText.setText("Modo mentor indisponível.");
             riskPlanText.setText(exception.getMessage());
             entrySetupText.setText("Setup intraday indisponível.");
             biasReviewText.setText("Revisão contra viés indisponível.");
@@ -159,6 +185,18 @@ public class MainActivity extends AppCompatActivity {
                 + "\n" + analysis.getContextSummary()
                 + "\n" + analysis.getTriggerSummary()
                 + "\n\nOrientação: " + analysis.getInstruction();
+    }
+
+    private String formatAssessment(SetupAssessment assessment) {
+        return "Qualidade do setup: " + assessment.getGrade()
+                + " — " + assessment.getTotalScore() + "/100"
+                + "\nTendência: " + assessment.getTrendScore() + "/20"
+                + "\nTimeframes: " + assessment.getTimeframeScore() + "/20"
+                + "\nMomentum: " + assessment.getMomentumScore() + "/20"
+                + "\nVolatilidade: " + assessment.getVolatilityScore() + "/20"
+                + "\nRisco: " + assessment.getRiskScore() + "/20"
+                + "\n\nPontos fortes:\n" + formatEvidence(assessment.getStrengths())
+                + "\n\nPontos fracos:\n" + formatEvidence(assessment.getWeaknesses());
     }
 
     private TradeThesis readThesis(int checkedId) {
