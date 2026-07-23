@@ -9,8 +9,11 @@ import android.widget.TextView;
 
 import androidx.appcompat.app.AppCompatActivity;
 
+import com.orbistrade.app.data.market.Candle;
 import com.orbistrade.app.data.market.DemoMarketDataProvider;
 import com.orbistrade.app.data.market.MarketDataProvider;
+import com.orbistrade.app.data.market.TwelveDataMarketDataProvider;
+import com.orbistrade.app.data.settings.ApiKeyStore;
 import com.orbistrade.app.domain.assistant.BiasGuard;
 import com.orbistrade.app.domain.assistant.ConfirmationReview;
 import com.orbistrade.app.domain.assistant.EntrySetup;
@@ -31,16 +34,21 @@ import com.orbistrade.app.domain.strategy.StrategySelector;
 
 import java.util.List;
 import java.util.Locale;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
 
 public class MainActivity extends AppCompatActivity {
 
-    private final MarketDataProvider marketDataProvider = new DemoMarketDataProvider();
+    private static final String SYMBOL = "EUR/USD";
+    private static final int CANDLE_LIMIT = 240;
+
     private final MarketSnapshotFactory snapshotFactory = new MarketSnapshotFactory();
     private final BiasGuard biasGuard = new BiasGuard();
     private final EntrySetupPlanner entrySetupPlanner = new EntrySetupPlanner();
     private final MultiTimeframeAnalyzer multiTimeframeAnalyzer = new MultiTimeframeAnalyzer();
     private final SetupScorer setupScorer = new SetupScorer();
     private final MentorExplainer mentorExplainer = new MentorExplainer();
+    private final ExecutorService marketExecutor = Executors.newSingleThreadExecutor();
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -53,14 +61,188 @@ public class MainActivity extends AppCompatActivity {
         Button analyzeButton = findViewById(R.id.analyzeButton);
         Button apiSettingsButton = findViewById(R.id.apiSettingsButton);
 
-        analyzeButton.setOnClickListener(view -> analyze(balanceInput, riskInput, thesisGroup));
+        analyzeButton.setOnClickListener(view -> analyze(balanceInput, riskInput, thesisGroup, analyzeButton));
         apiSettingsButton.setOnClickListener(view ->
                 startActivity(new Intent(this, ApiSettingsActivity.class))
         );
-        analyze(balanceInput, riskInput, thesisGroup);
+        analyze(balanceInput, riskInput, thesisGroup, analyzeButton);
     }
 
-    private void analyze(EditText balanceInput, EditText riskInput, RadioGroup thesisGroup) {
+    @Override
+    protected void onDestroy() {
+        marketExecutor.shutdownNow();
+        super.onDestroy();
+    }
+
+    private void analyze(
+            EditText balanceInput,
+            EditText riskInput,
+            RadioGroup thesisGroup,
+            Button analyzeButton
+    ) {
+        TextView statusText = findViewById(R.id.statusText);
+
+        final double balance;
+        final double riskPercent;
+        final TradeThesis thesis;
+        try {
+            balance = parseNumber(balanceInput.getText().toString());
+            riskPercent = parseNumber(riskInput.getText().toString());
+            thesis = readThesis(thesisGroup.getCheckedRadioButtonId());
+        } catch (IllegalArgumentException exception) {
+            showError(exception.getMessage());
+            return;
+        }
+
+        analyzeButton.setEnabled(false);
+        statusText.setText("Buscando candles de 15m e 5m...");
+
+        marketExecutor.execute(() -> {
+            try {
+                MarketDataLoad marketData = loadMarketData();
+                AnalysisOutput output = buildAnalysis(
+                        marketData.contextCandles,
+                        marketData.triggerCandles,
+                        balance,
+                        riskPercent,
+                        thesis,
+                        marketData.sourceLabel,
+                        marketData.warning
+                );
+                runOnUiThread(() -> {
+                    render(output);
+                    analyzeButton.setEnabled(true);
+                });
+            } catch (IllegalArgumentException exception) {
+                runOnUiThread(() -> {
+                    showError(exception.getMessage());
+                    analyzeButton.setEnabled(true);
+                });
+            } catch (RuntimeException exception) {
+                runOnUiThread(() -> {
+                    showError("Falha inesperada ao processar os dados de mercado.");
+                    analyzeButton.setEnabled(true);
+                });
+            }
+        });
+    }
+
+    private MarketDataLoad loadMarketData() {
+        ApiKeyStore keyStore = new ApiKeyStore(this);
+        String selectedProvider = keyStore.readActiveMarketProvider();
+        String apiKey = keyStore.read(ApiKeyStore.TWELVE_DATA_API_KEY);
+
+        if ("Twelve Data".equalsIgnoreCase(selectedProvider) && !apiKey.isEmpty()) {
+            try {
+                MarketDataProvider provider = new TwelveDataMarketDataProvider(apiKey);
+                return new MarketDataLoad(
+                        provider.getCandles(SYMBOL, "15m", CANDLE_LIMIT),
+                        provider.getCandles(SYMBOL, "5m", CANDLE_LIMIT),
+                        "Twelve Data — mercado real",
+                        ""
+                );
+            } catch (IllegalArgumentException exception) {
+                MarketDataProvider fallback = new DemoMarketDataProvider();
+                return new MarketDataLoad(
+                        fallback.getCandles(SYMBOL, "15m", CANDLE_LIMIT),
+                        fallback.getCandles(SYMBOL, "5m", CANDLE_LIMIT),
+                        "Modo demonstração",
+                        "A consulta real falhou: " + exception.getMessage()
+                );
+            }
+        }
+
+        MarketDataProvider fallback = new DemoMarketDataProvider();
+        String reason = apiKey.isEmpty()
+                ? "Configure a chave da Twelve Data para ativar candles reais."
+                : "O provedor selecionado ainda não possui integração de candles.";
+        return new MarketDataLoad(
+                fallback.getCandles(SYMBOL, "15m", CANDLE_LIMIT),
+                fallback.getCandles(SYMBOL, "5m", CANDLE_LIMIT),
+                "Modo demonstração",
+                reason
+        );
+    }
+
+    private AnalysisOutput buildAnalysis(
+            List<Candle> contextCandles,
+            List<Candle> triggerCandles,
+            double balance,
+            double riskPercent,
+            TradeThesis thesis,
+            String sourceLabel,
+            String sourceWarning
+    ) {
+        MarketSnapshot context15m = snapshotFactory.create(SYMBOL, contextCandles);
+        MarketSnapshot trigger5m = snapshotFactory.create(SYMBOL, triggerCandles);
+
+        StrategySelector.SelectionResult contextResult = new StrategySelector().analyze(context15m);
+        StrategySelector.SelectionResult triggerResult = new StrategySelector().analyze(trigger5m);
+
+        MultiTimeframeAnalysis multiTimeframe = multiTimeframeAnalyzer.analyze(
+                context15m,
+                contextResult.getRegime(),
+                contextResult.getDecision(),
+                trigger5m,
+                triggerResult.getRegime(),
+                triggerResult.getDecision()
+        );
+
+        StrategyDecision effectiveDecision = triggerResult.getDecision();
+        if (multiTimeframe.getStatus() != MultiTimeframeAnalysis.Status.ALIGNED) {
+            effectiveDecision = new StrategyDecision(
+                    "Filtro multitemporal",
+                    StrategyDecision.Action.WAIT,
+                    multiTimeframe.getQualityScore(),
+                    multiTimeframe.getInstruction()
+            );
+        }
+
+        RiskProfile profile = new RiskProfile(balance, riskPercent, 2.0, 1.5);
+        TradePlan plan = new RiskManager().buildPlan(trigger5m, effectiveDecision, profile);
+        EntrySetup setup = entrySetupPlanner.build(trigger5m, effectiveDecision, plan);
+        SetupAssessment assessment = setupScorer.score(
+                context15m,
+                trigger5m,
+                multiTimeframe,
+                effectiveDecision,
+                plan
+        );
+        String mentorExplanation = mentorExplainer.explain(
+                context15m,
+                trigger5m,
+                multiTimeframe,
+                effectiveDecision,
+                plan,
+                assessment
+        );
+        ConfirmationReview review = biasGuard.review(
+                thesis,
+                trigger5m,
+                triggerResult.getRegime(),
+                effectiveDecision,
+                plan
+        );
+
+        return new AnalysisOutput(
+                sourceLabel,
+                sourceWarning,
+                context15m,
+                trigger5m,
+                contextResult,
+                triggerResult,
+                effectiveDecision,
+                multiTimeframe,
+                assessment,
+                mentorExplanation,
+                plan,
+                setup,
+                thesis,
+                review
+        );
+    }
+
+    private void render(AnalysisOutput output) {
         TextView statusText = findViewById(R.id.statusText);
         TextView regimeText = findViewById(R.id.regimeText);
         TextView strategyText = findViewById(R.id.strategyText);
@@ -72,91 +254,47 @@ public class MainActivity extends AppCompatActivity {
         TextView entrySetupText = findViewById(R.id.entrySetupText);
         TextView biasReviewText = findViewById(R.id.biasReviewText);
 
-        try {
-            double balance = parseNumber(balanceInput.getText().toString());
-            double riskPercent = parseNumber(riskInput.getText().toString());
-            TradeThesis thesis = readThesis(thesisGroup.getCheckedRadioButtonId());
-
-            MarketSnapshot context15m = snapshotFactory.create(
-                    "EUR/USD",
-                    marketDataProvider.getCandles("EUR/USD", "15m", 240)
-            );
-            MarketSnapshot trigger5m = snapshotFactory.create(
-                    "EUR/USD",
-                    marketDataProvider.getCandles("EUR/USD", "5m", 240)
-            );
-
-            StrategySelector.SelectionResult contextResult = new StrategySelector().analyze(context15m);
-            StrategySelector.SelectionResult triggerResult = new StrategySelector().analyze(trigger5m);
-
-            MultiTimeframeAnalysis multiTimeframe = multiTimeframeAnalyzer.analyze(
-                    context15m,
-                    contextResult.getRegime(),
-                    contextResult.getDecision(),
-                    trigger5m,
-                    triggerResult.getRegime(),
-                    triggerResult.getDecision()
-            );
-
-            StrategyDecision effectiveDecision = triggerResult.getDecision();
-            if (multiTimeframe.getStatus() != MultiTimeframeAnalysis.Status.ALIGNED) {
-                effectiveDecision = new StrategyDecision(
-                        "Filtro multitemporal",
-                        StrategyDecision.Action.WAIT,
-                        multiTimeframe.getQualityScore(),
-                        multiTimeframe.getInstruction()
-                );
-            }
-
-            RiskProfile profile = new RiskProfile(balance, riskPercent, 2.0, 1.5);
-            TradePlan plan = new RiskManager().buildPlan(trigger5m, effectiveDecision, profile);
-            EntrySetup setup = entrySetupPlanner.build(trigger5m, effectiveDecision, plan);
-            SetupAssessment assessment = setupScorer.score(
-                    context15m,
-                    trigger5m,
-                    multiTimeframe,
-                    effectiveDecision,
-                    plan
-            );
-            String mentorExplanation = mentorExplainer.explain(
-                    context15m,
-                    trigger5m,
-                    multiTimeframe,
-                    effectiveDecision,
-                    plan,
-                    assessment
-            );
-            ConfirmationReview review = biasGuard.review(
-                    thesis,
-                    trigger5m,
-                    triggerResult.getRegime(),
-                    effectiveDecision,
-                    plan
-            );
-
-            statusText.setText("Assistente de análise, risco e aprendizado ativo");
-            regimeText.setText(formatMarket(context15m, trigger5m, contextResult, triggerResult));
-            strategyText.setText("Estratégia efetiva: " + effectiveDecision.getStrategyName());
-            decisionText.setText(
-                    "Decisão: " + effectiveDecision.getAction().name()
-                            + "\nConfiança: " + effectiveDecision.getConfidence() + "%"
-                            + "\nMotivo: " + effectiveDecision.getRationale()
-            );
-            multiTimeframeText.setText(formatMultiTimeframe(multiTimeframe));
-            setupScoreText.setText(formatAssessment(assessment));
-            mentorText.setText("Modo mentor\n" + mentorExplanation);
-            riskPlanText.setText(formatPlan(plan));
-            entrySetupText.setText(formatSetup(setup));
-            biasReviewText.setText(formatReview(thesis, review));
-        } catch (IllegalArgumentException exception) {
-            statusText.setText("Não foi possível concluir a análise");
-            multiTimeframeText.setText("Análise multitemporal indisponível.");
-            setupScoreText.setText("Qualidade do setup indisponível.");
-            mentorText.setText("Modo mentor indisponível.");
-            riskPlanText.setText(exception.getMessage());
-            entrySetupText.setText("Setup intraday indisponível.");
-            biasReviewText.setText("Revisão contra viés indisponível.");
+        String status = "Fonte: " + output.sourceLabel + "\nAssistente de análise, risco e aprendizado ativo";
+        if (!output.sourceWarning.isEmpty()) {
+            status += "\nAviso: " + output.sourceWarning;
         }
+        statusText.setText(status);
+        regimeText.setText(formatMarket(
+                output.context15m,
+                output.trigger5m,
+                output.contextResult,
+                output.triggerResult
+        ));
+        strategyText.setText("Estratégia efetiva: " + output.effectiveDecision.getStrategyName());
+        decisionText.setText(
+                "Decisão: " + output.effectiveDecision.getAction().name()
+                        + "\nConfiança: " + output.effectiveDecision.getConfidence() + "%"
+                        + "\nMotivo: " + output.effectiveDecision.getRationale()
+        );
+        multiTimeframeText.setText(formatMultiTimeframe(output.multiTimeframe));
+        setupScoreText.setText(formatAssessment(output.assessment));
+        mentorText.setText("Modo mentor\n" + output.mentorExplanation);
+        riskPlanText.setText(formatPlan(output.plan));
+        entrySetupText.setText(formatSetup(output.setup));
+        biasReviewText.setText(formatReview(output.thesis, output.review));
+    }
+
+    private void showError(String message) {
+        TextView statusText = findViewById(R.id.statusText);
+        TextView multiTimeframeText = findViewById(R.id.multiTimeframeText);
+        TextView setupScoreText = findViewById(R.id.setupScoreText);
+        TextView mentorText = findViewById(R.id.mentorText);
+        TextView riskPlanText = findViewById(R.id.riskPlanText);
+        TextView entrySetupText = findViewById(R.id.entrySetupText);
+        TextView biasReviewText = findViewById(R.id.biasReviewText);
+
+        statusText.setText("Não foi possível concluir a análise");
+        multiTimeframeText.setText("Análise multitemporal indisponível.");
+        setupScoreText.setText("Qualidade do setup indisponível.");
+        mentorText.setText("Modo mentor indisponível.");
+        riskPlanText.setText(message == null ? "Erro desconhecido." : message);
+        entrySetupText.setText("Setup intraday indisponível.");
+        biasReviewText.setText("Revisão contra viés indisponível.");
     }
 
     private String formatMarket(
@@ -200,12 +338,8 @@ public class MainActivity extends AppCompatActivity {
     }
 
     private TradeThesis readThesis(int checkedId) {
-        if (checkedId == R.id.thesisBuy) {
-            return TradeThesis.BUY;
-        }
-        if (checkedId == R.id.thesisSell) {
-            return TradeThesis.SELL;
-        }
+        if (checkedId == R.id.thesisBuy) return TradeThesis.BUY;
+        if (checkedId == R.id.thesisSell) return TradeThesis.SELL;
         return TradeThesis.NEUTRAL;
     }
 
@@ -214,7 +348,6 @@ public class MainActivity extends AppCompatActivity {
         if (normalized.isEmpty()) {
             throw new IllegalArgumentException("Preencha saldo e risco por operação.");
         }
-
         try {
             return Double.parseDouble(normalized);
         } catch (NumberFormatException exception) {
@@ -226,7 +359,6 @@ public class MainActivity extends AppCompatActivity {
         if (!plan.isExecutable()) {
             return "Plano de risco: BLOQUEADO\n" + plan.getNote();
         }
-
         return String.format(
                 Locale.US,
                 "Plano de risco: LIBERADO\nEntrada: %.5f\nStop loss: %.5f\nTake profit: %.5f\nRisco financeiro: %.2f\nTamanho estimado: %.2f unidades\n%s",
@@ -244,7 +376,6 @@ public class MainActivity extends AppCompatActivity {
             return "Setup de entrada: BLOQUEADO\n" + setup.getTriggerCondition()
                     + "\n" + setup.getWarning();
         }
-
         return String.format(
                 Locale.US,
                 "Setup condicional de 15–30 min\nStatus: %s\nEstratégia: %s\nJanela estimada: até %d min\nZona de gatilho: %.5f\nInvalidação: %.5f\nConfirmação: %s\n\n%s",
@@ -269,17 +400,80 @@ public class MainActivity extends AppCompatActivity {
     }
 
     private String formatEvidence(List<String> evidence) {
-        if (evidence.isEmpty()) {
-            return "• Nenhuma evidência relevante.";
-        }
-
+        if (evidence.isEmpty()) return "• Nenhuma evidência relevante.";
         StringBuilder builder = new StringBuilder();
         for (String item : evidence) {
-            if (builder.length() > 0) {
-                builder.append('\n');
-            }
+            if (builder.length() > 0) builder.append('\n');
             builder.append("• ").append(item);
         }
         return builder.toString();
+    }
+
+    private static final class MarketDataLoad {
+        private final List<Candle> contextCandles;
+        private final List<Candle> triggerCandles;
+        private final String sourceLabel;
+        private final String warning;
+
+        private MarketDataLoad(
+                List<Candle> contextCandles,
+                List<Candle> triggerCandles,
+                String sourceLabel,
+                String warning
+        ) {
+            this.contextCandles = contextCandles;
+            this.triggerCandles = triggerCandles;
+            this.sourceLabel = sourceLabel;
+            this.warning = warning;
+        }
+    }
+
+    private static final class AnalysisOutput {
+        private final String sourceLabel;
+        private final String sourceWarning;
+        private final MarketSnapshot context15m;
+        private final MarketSnapshot trigger5m;
+        private final StrategySelector.SelectionResult contextResult;
+        private final StrategySelector.SelectionResult triggerResult;
+        private final StrategyDecision effectiveDecision;
+        private final MultiTimeframeAnalysis multiTimeframe;
+        private final SetupAssessment assessment;
+        private final String mentorExplanation;
+        private final TradePlan plan;
+        private final EntrySetup setup;
+        private final TradeThesis thesis;
+        private final ConfirmationReview review;
+
+        private AnalysisOutput(
+                String sourceLabel,
+                String sourceWarning,
+                MarketSnapshot context15m,
+                MarketSnapshot trigger5m,
+                StrategySelector.SelectionResult contextResult,
+                StrategySelector.SelectionResult triggerResult,
+                StrategyDecision effectiveDecision,
+                MultiTimeframeAnalysis multiTimeframe,
+                SetupAssessment assessment,
+                String mentorExplanation,
+                TradePlan plan,
+                EntrySetup setup,
+                TradeThesis thesis,
+                ConfirmationReview review
+        ) {
+            this.sourceLabel = sourceLabel;
+            this.sourceWarning = sourceWarning;
+            this.context15m = context15m;
+            this.trigger5m = trigger5m;
+            this.contextResult = contextResult;
+            this.triggerResult = triggerResult;
+            this.effectiveDecision = effectiveDecision;
+            this.multiTimeframe = multiTimeframe;
+            this.assessment = assessment;
+            this.mentorExplanation = mentorExplanation;
+            this.plan = plan;
+            this.setup = setup;
+            this.thesis = thesis;
+            this.review = review;
+        }
     }
 }
