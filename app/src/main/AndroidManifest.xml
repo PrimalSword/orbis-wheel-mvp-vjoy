@@ -10,6 +10,10 @@
         android:theme="@style/Theme.Orbistrade">
 
         <activity
+            android:name=".ApiSettingsActivity"
+            android:exported="false" />
+
+        <activity
             android:name=".MainActivity"
             android:exported="true">
             <intent-filter>
