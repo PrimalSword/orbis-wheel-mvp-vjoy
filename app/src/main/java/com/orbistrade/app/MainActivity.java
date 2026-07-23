@@ -13,6 +13,8 @@ import com.orbistrade.app.data.market.DemoMarketDataProvider;
 import com.orbistrade.app.data.market.MarketDataProvider;
 import com.orbistrade.app.domain.assistant.BiasGuard;
 import com.orbistrade.app.domain.assistant.ConfirmationReview;
+import com.orbistrade.app.domain.assistant.EntrySetup;
+import com.orbistrade.app.domain.assistant.EntrySetupPlanner;
 import com.orbistrade.app.domain.assistant.TradeThesis;
 import com.orbistrade.app.domain.market.MarketSnapshotFactory;
 import com.orbistrade.app.domain.model.MarketSnapshot;
@@ -30,6 +32,7 @@ public class MainActivity extends AppCompatActivity {
     private final MarketDataProvider marketDataProvider = new DemoMarketDataProvider();
     private final MarketSnapshotFactory snapshotFactory = new MarketSnapshotFactory();
     private final BiasGuard biasGuard = new BiasGuard();
+    private final EntrySetupPlanner entrySetupPlanner = new EntrySetupPlanner();
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -55,6 +58,7 @@ public class MainActivity extends AppCompatActivity {
         TextView strategyText = findViewById(R.id.strategyText);
         TextView decisionText = findViewById(R.id.decisionText);
         TextView riskPlanText = findViewById(R.id.riskPlanText);
+        TextView entrySetupText = findViewById(R.id.entrySetupText);
         TextView biasReviewText = findViewById(R.id.biasReviewText);
 
         try {
@@ -64,7 +68,7 @@ public class MainActivity extends AppCompatActivity {
 
             MarketSnapshot snapshot = snapshotFactory.create(
                     "EUR/USD",
-                    marketDataProvider.getCandles("EUR/USD", "1h", 240)
+                    marketDataProvider.getCandles("EUR/USD", "5m", 240)
             );
 
             StrategySelector.SelectionResult result = new StrategySelector().analyze(snapshot);
@@ -72,6 +76,7 @@ public class MainActivity extends AppCompatActivity {
 
             RiskProfile profile = new RiskProfile(balance, riskPercent, 2.0, 1.5);
             TradePlan plan = new RiskManager().buildPlan(snapshot, decision, profile);
+            EntrySetup setup = entrySetupPlanner.build(snapshot, decision, plan);
             ConfirmationReview review = biasGuard.review(
                     thesis,
                     snapshot,
@@ -80,7 +85,7 @@ public class MainActivity extends AppCompatActivity {
                     plan
             );
 
-            statusText.setText("Assistente técnico, risco e proteção contra viés ativos");
+            statusText.setText("Assistente intraday de 15 a 30 minutos ativo");
             regimeText.setText(
                     String.format(
                             Locale.US,
@@ -101,10 +106,12 @@ public class MainActivity extends AppCompatActivity {
             );
 
             riskPlanText.setText(formatPlan(plan));
+            entrySetupText.setText(formatSetup(setup));
             biasReviewText.setText(formatReview(thesis, review));
         } catch (IllegalArgumentException exception) {
             statusText.setText("Não foi possível concluir a análise");
             riskPlanText.setText(exception.getMessage());
+            entrySetupText.setText("Setup intraday indisponível.");
             biasReviewText.setText("Revisão contra viés indisponível.");
         }
     }
@@ -146,6 +153,25 @@ public class MainActivity extends AppCompatActivity {
                 plan.getRiskAmount(),
                 plan.getPositionUnits(),
                 plan.getNote()
+        );
+    }
+
+    private String formatSetup(EntrySetup setup) {
+        if (setup.getStatus() == EntrySetup.Status.BLOCKED) {
+            return "Setup de entrada: BLOQUEADO\n" + setup.getTriggerCondition()
+                    + "\n" + setup.getWarning();
+        }
+
+        return String.format(
+                Locale.US,
+                "Setup condicional de 15–30 min\nStatus: %s\nEstratégia: %s\nJanela estimada: até %d min\nZona de gatilho: %.5f\nInvalidação: %.5f\nConfirmação: %s\n\n%s",
+                setup.getStatus().name(),
+                setup.getStrategyName(),
+                setup.getWindowMinutes(),
+                setup.getTriggerPrice(),
+                setup.getInvalidationPrice(),
+                setup.getTriggerCondition(),
+                setup.getWarning()
         );
     }
 
