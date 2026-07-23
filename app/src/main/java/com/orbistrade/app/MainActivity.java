@@ -15,6 +15,8 @@ import com.orbistrade.app.domain.assistant.BiasGuard;
 import com.orbistrade.app.domain.assistant.ConfirmationReview;
 import com.orbistrade.app.domain.assistant.EntrySetup;
 import com.orbistrade.app.domain.assistant.EntrySetupPlanner;
+import com.orbistrade.app.domain.assistant.MultiTimeframeAnalysis;
+import com.orbistrade.app.domain.assistant.MultiTimeframeAnalyzer;
 import com.orbistrade.app.domain.assistant.TradeThesis;
 import com.orbistrade.app.domain.market.MarketSnapshotFactory;
 import com.orbistrade.app.domain.model.MarketSnapshot;
@@ -33,6 +35,7 @@ public class MainActivity extends AppCompatActivity {
     private final MarketSnapshotFactory snapshotFactory = new MarketSnapshotFactory();
     private final BiasGuard biasGuard = new BiasGuard();
     private final EntrySetupPlanner entrySetupPlanner = new EntrySetupPlanner();
+    private final MultiTimeframeAnalyzer multiTimeframeAnalyzer = new MultiTimeframeAnalyzer();
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -57,6 +60,7 @@ public class MainActivity extends AppCompatActivity {
         TextView regimeText = findViewById(R.id.regimeText);
         TextView strategyText = findViewById(R.id.strategyText);
         TextView decisionText = findViewById(R.id.decisionText);
+        TextView multiTimeframeText = findViewById(R.id.multiTimeframeText);
         TextView riskPlanText = findViewById(R.id.riskPlanText);
         TextView entrySetupText = findViewById(R.id.entrySetupText);
         TextView biasReviewText = findViewById(R.id.biasReviewText);
@@ -66,54 +70,95 @@ public class MainActivity extends AppCompatActivity {
             double riskPercent = parseNumber(riskInput.getText().toString());
             TradeThesis thesis = readThesis(thesisGroup.getCheckedRadioButtonId());
 
-            MarketSnapshot snapshot = snapshotFactory.create(
+            MarketSnapshot context15m = snapshotFactory.create(
+                    "EUR/USD",
+                    marketDataProvider.getCandles("EUR/USD", "15m", 240)
+            );
+            MarketSnapshot trigger5m = snapshotFactory.create(
                     "EUR/USD",
                     marketDataProvider.getCandles("EUR/USD", "5m", 240)
             );
 
-            StrategySelector.SelectionResult result = new StrategySelector().analyze(snapshot);
-            StrategyDecision decision = result.getDecision();
+            StrategySelector.SelectionResult contextResult = new StrategySelector().analyze(context15m);
+            StrategySelector.SelectionResult triggerResult = new StrategySelector().analyze(trigger5m);
+
+            MultiTimeframeAnalysis multiTimeframe = multiTimeframeAnalyzer.analyze(
+                    context15m,
+                    contextResult.getRegime(),
+                    contextResult.getDecision(),
+                    trigger5m,
+                    triggerResult.getRegime(),
+                    triggerResult.getDecision()
+            );
+
+            StrategyDecision effectiveDecision = triggerResult.getDecision();
+            if (multiTimeframe.getStatus() != MultiTimeframeAnalysis.Status.ALIGNED) {
+                effectiveDecision = new StrategyDecision(
+                        "Filtro multitemporal",
+                        StrategyDecision.Action.WAIT,
+                        multiTimeframe.getQualityScore(),
+                        multiTimeframe.getInstruction()
+                );
+            }
 
             RiskProfile profile = new RiskProfile(balance, riskPercent, 2.0, 1.5);
-            TradePlan plan = new RiskManager().buildPlan(snapshot, decision, profile);
-            EntrySetup setup = entrySetupPlanner.build(snapshot, decision, plan);
+            TradePlan plan = new RiskManager().buildPlan(trigger5m, effectiveDecision, profile);
+            EntrySetup setup = entrySetupPlanner.build(trigger5m, effectiveDecision, plan);
             ConfirmationReview review = biasGuard.review(
                     thesis,
-                    snapshot,
-                    result.getRegime(),
-                    decision,
+                    trigger5m,
+                    triggerResult.getRegime(),
+                    effectiveDecision,
                     plan
             );
 
-            statusText.setText("Assistente intraday de 15 a 30 minutos ativo");
-            regimeText.setText(
-                    String.format(
-                            Locale.US,
-                            "Regime: %s\nPreço: %.5f | EMA20: %.5f | EMA200: %.5f\nRSI: %.1f | ATR: %.2f%%",
-                            result.getRegime().name(),
-                            snapshot.getPrice(),
-                            snapshot.getEma20(),
-                            snapshot.getEma200(),
-                            snapshot.getRsi(),
-                            snapshot.getAtrPercent()
-                    )
-            );
-            strategyText.setText("Estratégia: " + decision.getStrategyName());
+            statusText.setText("Assistente multitemporal 15m + 5m ativo");
+            regimeText.setText(formatMarket(context15m, trigger5m, contextResult, triggerResult));
+            strategyText.setText("Estratégia efetiva: " + effectiveDecision.getStrategyName());
             decisionText.setText(
-                    "Decisão: " + decision.getAction().name()
-                            + "\nConfiança: " + decision.getConfidence() + "%"
-                            + "\nMotivo: " + decision.getRationale()
+                    "Decisão: " + effectiveDecision.getAction().name()
+                            + "\nConfiança: " + effectiveDecision.getConfidence() + "%"
+                            + "\nMotivo: " + effectiveDecision.getRationale()
             );
-
+            multiTimeframeText.setText(formatMultiTimeframe(multiTimeframe));
             riskPlanText.setText(formatPlan(plan));
             entrySetupText.setText(formatSetup(setup));
             biasReviewText.setText(formatReview(thesis, review));
         } catch (IllegalArgumentException exception) {
             statusText.setText("Não foi possível concluir a análise");
+            multiTimeframeText.setText("Análise multitemporal indisponível.");
             riskPlanText.setText(exception.getMessage());
             entrySetupText.setText("Setup intraday indisponível.");
             biasReviewText.setText("Revisão contra viés indisponível.");
         }
+    }
+
+    private String formatMarket(
+            MarketSnapshot context15m,
+            MarketSnapshot trigger5m,
+            StrategySelector.SelectionResult contextResult,
+            StrategySelector.SelectionResult triggerResult
+    ) {
+        return String.format(
+                Locale.US,
+                "15m: %s | preço %.5f | RSI %.1f\n5m: %s | preço %.5f | RSI %.1f | ATR %.2f%%",
+                contextResult.getRegime().name(),
+                context15m.getPrice(),
+                context15m.getRsi(),
+                triggerResult.getRegime().name(),
+                trigger5m.getPrice(),
+                trigger5m.getRsi(),
+                trigger5m.getAtrPercent()
+        );
+    }
+
+    private String formatMultiTimeframe(MultiTimeframeAnalysis analysis) {
+        return "Filtro multitemporal"
+                + "\nStatus: " + analysis.getStatus().name()
+                + "\nQualidade: " + analysis.getQualityScore() + "%"
+                + "\n" + analysis.getContextSummary()
+                + "\n" + analysis.getTriggerSummary()
+                + "\n\nOrientação: " + analysis.getInstruction();
     }
 
     private TradeThesis readThesis(int checkedId) {
