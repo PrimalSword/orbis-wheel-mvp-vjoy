@@ -4,12 +4,16 @@ import android.content.Intent;
 import android.os.Bundle;
 import android.widget.Button;
 import android.widget.EditText;
+import android.widget.RadioGroup;
 import android.widget.TextView;
 
 import androidx.appcompat.app.AppCompatActivity;
 
 import com.orbistrade.app.data.market.DemoMarketDataProvider;
 import com.orbistrade.app.data.market.MarketDataProvider;
+import com.orbistrade.app.domain.assistant.BiasGuard;
+import com.orbistrade.app.domain.assistant.ConfirmationReview;
+import com.orbistrade.app.domain.assistant.TradeThesis;
 import com.orbistrade.app.domain.market.MarketSnapshotFactory;
 import com.orbistrade.app.domain.model.MarketSnapshot;
 import com.orbistrade.app.domain.risk.RiskManager;
@@ -18,12 +22,14 @@ import com.orbistrade.app.domain.risk.TradePlan;
 import com.orbistrade.app.domain.strategy.StrategyDecision;
 import com.orbistrade.app.domain.strategy.StrategySelector;
 
+import java.util.List;
 import java.util.Locale;
 
 public class MainActivity extends AppCompatActivity {
 
     private final MarketDataProvider marketDataProvider = new DemoMarketDataProvider();
     private final MarketSnapshotFactory snapshotFactory = new MarketSnapshotFactory();
+    private final BiasGuard biasGuard = new BiasGuard();
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -32,26 +38,29 @@ public class MainActivity extends AppCompatActivity {
 
         EditText balanceInput = findViewById(R.id.balanceInput);
         EditText riskInput = findViewById(R.id.riskInput);
+        RadioGroup thesisGroup = findViewById(R.id.thesisGroup);
         Button analyzeButton = findViewById(R.id.analyzeButton);
         Button apiSettingsButton = findViewById(R.id.apiSettingsButton);
 
-        analyzeButton.setOnClickListener(view -> analyze(balanceInput, riskInput));
+        analyzeButton.setOnClickListener(view -> analyze(balanceInput, riskInput, thesisGroup));
         apiSettingsButton.setOnClickListener(view ->
                 startActivity(new Intent(this, ApiSettingsActivity.class))
         );
-        analyze(balanceInput, riskInput);
+        analyze(balanceInput, riskInput, thesisGroup);
     }
 
-    private void analyze(EditText balanceInput, EditText riskInput) {
+    private void analyze(EditText balanceInput, EditText riskInput, RadioGroup thesisGroup) {
         TextView statusText = findViewById(R.id.statusText);
         TextView regimeText = findViewById(R.id.regimeText);
         TextView strategyText = findViewById(R.id.strategyText);
         TextView decisionText = findViewById(R.id.decisionText);
         TextView riskPlanText = findViewById(R.id.riskPlanText);
+        TextView biasReviewText = findViewById(R.id.biasReviewText);
 
         try {
             double balance = parseNumber(balanceInput.getText().toString());
             double riskPercent = parseNumber(riskInput.getText().toString());
+            TradeThesis thesis = readThesis(thesisGroup.getCheckedRadioButtonId());
 
             MarketSnapshot snapshot = snapshotFactory.create(
                     "EUR/USD",
@@ -63,8 +72,15 @@ public class MainActivity extends AppCompatActivity {
 
             RiskProfile profile = new RiskProfile(balance, riskPercent, 2.0, 1.5);
             TradePlan plan = new RiskManager().buildPlan(snapshot, decision, profile);
+            ConfirmationReview review = biasGuard.review(
+                    thesis,
+                    snapshot,
+                    result.getRegime(),
+                    decision,
+                    plan
+            );
 
-            statusText.setText("Dados, indicadores, estratégia e risco ativos");
+            statusText.setText("Assistente técnico, risco e proteção contra viés ativos");
             regimeText.setText(
                     String.format(
                             Locale.US,
@@ -85,10 +101,22 @@ public class MainActivity extends AppCompatActivity {
             );
 
             riskPlanText.setText(formatPlan(plan));
+            biasReviewText.setText(formatReview(thesis, review));
         } catch (IllegalArgumentException exception) {
             statusText.setText("Não foi possível concluir a análise");
             riskPlanText.setText(exception.getMessage());
+            biasReviewText.setText("Revisão contra viés indisponível.");
         }
+    }
+
+    private TradeThesis readThesis(int checkedId) {
+        if (checkedId == R.id.thesisBuy) {
+            return TradeThesis.BUY;
+        }
+        if (checkedId == R.id.thesisSell) {
+            return TradeThesis.SELL;
+        }
+        return TradeThesis.NEUTRAL;
     }
 
     private double parseNumber(String value) {
@@ -119,5 +147,30 @@ public class MainActivity extends AppCompatActivity {
                 plan.getPositionUnits(),
                 plan.getNote()
         );
+    }
+
+    private String formatReview(TradeThesis thesis, ConfirmationReview review) {
+        return "Revisão contra viés de confirmação"
+                + "\nSua hipótese: " + thesis.name()
+                + "\nVeredito: " + review.getVerdict().name()
+                + "\nAlinhamento: " + review.getAlignmentScore() + "%"
+                + "\n\nA favor:\n" + formatEvidence(review.getSupportingEvidence())
+                + "\n\nContra:\n" + formatEvidence(review.getOpposingEvidence())
+                + "\n\nConclusão: " + review.getConclusion();
+    }
+
+    private String formatEvidence(List<String> evidence) {
+        if (evidence.isEmpty()) {
+            return "• Nenhuma evidência relevante.";
+        }
+
+        StringBuilder builder = new StringBuilder();
+        for (String item : evidence) {
+            if (builder.length() > 0) {
+                builder.append('\n');
+            }
+            builder.append("• ").append(item);
+        }
+        return builder.toString();
     }
 }
