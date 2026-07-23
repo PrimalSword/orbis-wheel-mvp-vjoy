@@ -35,7 +35,9 @@ import com.orbistrade.app.domain.strategy.StrategyDecision;
 import com.orbistrade.app.domain.strategy.StrategySelector;
 import com.orbistrade.app.domain.structure.MarketStructureAnalysis;
 import com.orbistrade.app.domain.structure.MarketStructureAnalyzer;
+import com.orbistrade.app.ui.chart.CandleChartView;
 
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Locale;
 import java.util.concurrent.ExecutorService;
@@ -103,7 +105,9 @@ public class MainActivity extends AppCompatActivity {
                 });
             } catch (RuntimeException exception) {
                 runOnUiThread(() -> {
-                    showError(exception.getMessage() == null ? "Falha inesperada ao processar os dados de mercado." : exception.getMessage());
+                    showError(exception.getMessage() == null
+                            ? "Falha inesperada ao processar os dados de mercado."
+                            : exception.getMessage());
                     analyzeButton.setEnabled(true);
                 });
             }
@@ -172,39 +176,71 @@ public class MainActivity extends AppCompatActivity {
             );
         }
         if (isStructureConflict(effectiveDecision, contextStructure, triggerStructure)) {
-            effectiveDecision = waitDecision(effectiveDecision, "Filtro de estrutura",
-                    "A direção proposta conflita com a estrutura de preço. Aguarde BOS, CHoCH ou novo pivô confirmado.");
+            effectiveDecision = waitDecision(
+                    effectiveDecision,
+                    "Filtro de estrutura",
+                    "A direção proposta conflita com a estrutura de preço. Aguarde BOS, CHoCH ou novo pivô confirmado."
+            );
         }
         if (isPatternConflict(effectiveDecision, triggerPatterns)) {
-            effectiveDecision = waitDecision(effectiveDecision, "Filtro de padrões",
-                    "O padrão recente aponta contra a direção sugerida. Aguarde confirmação no próximo candle.");
+            effectiveDecision = waitDecision(
+                    effectiveDecision,
+                    "Filtro de padrões",
+                    "O padrão recente aponta contra a direção sugerida. Aguarde confirmação no próximo candle."
+            );
         }
 
         RiskProfile profile = new RiskProfile(balance, riskPercent, 2.0, 1.5);
         TradePlan plan = new RiskManager().buildPlan(trigger5m, effectiveDecision, profile);
         EntrySetup setup = entrySetupPlanner.build(trigger5m, effectiveDecision, plan);
-        SetupAssessment assessment = setupScorer.score(context15m, trigger5m, multiTimeframe, effectiveDecision, plan);
-        String mentor = mentorExplainer.explain(context15m, trigger5m, multiTimeframe, effectiveDecision, plan, assessment)
-                + buildStructureMentorNote(contextStructure, triggerStructure)
+        SetupAssessment assessment = setupScorer.score(
+                context15m, trigger5m, multiTimeframe, effectiveDecision, plan
+        );
+        String mentor = mentorExplainer.explain(
+                context15m, trigger5m, multiTimeframe, effectiveDecision, plan, assessment
+        ) + buildStructureMentorNote(contextStructure, triggerStructure)
                 + buildPatternMentorNote(contextPatterns, triggerPatterns);
         ConfirmationReview review = biasGuard.review(
                 thesis, trigger5m, triggerResult.getRegime(), effectiveDecision, plan
         );
 
         return new AnalysisOutput(
-                data.sourceLabel, data.warning, context15m, trigger5m,
-                contextResult, triggerResult, effectiveDecision, multiTimeframe,
-                contextStructure, triggerStructure, contextPatterns, triggerPatterns,
-                assessment, mentor, plan, setup, thesis, review
+                data.sourceLabel,
+                data.warning,
+                data.triggerCandles,
+                context15m,
+                trigger5m,
+                contextResult,
+                triggerResult,
+                effectiveDecision,
+                multiTimeframe,
+                contextStructure,
+                triggerStructure,
+                contextPatterns,
+                triggerPatterns,
+                assessment,
+                mentor,
+                plan,
+                setup,
+                thesis,
+                review
         );
     }
 
     private StrategyDecision waitDecision(StrategyDecision current, String name, String rationale) {
-        return new StrategyDecision(name, StrategyDecision.Action.WAIT,
-                Math.min(current.getConfidence(), 55), rationale);
+        return new StrategyDecision(
+                name,
+                StrategyDecision.Action.WAIT,
+                Math.min(current.getConfidence(), 55),
+                rationale
+        );
     }
 
-    private boolean isStructureConflict(StrategyDecision decision, MarketStructureAnalysis context, MarketStructureAnalysis trigger) {
+    private boolean isStructureConflict(
+            StrategyDecision decision,
+            MarketStructureAnalysis context,
+            MarketStructureAnalysis trigger
+    ) {
         if (decision.getAction() == StrategyDecision.Action.BUY) {
             return context.getTrend() == MarketStructureAnalysis.Trend.BEARISH
                     || trigger.getEvent() == MarketStructureAnalysis.Event.CHOCH_BEARISH
@@ -226,13 +262,19 @@ public class MainActivity extends AppCompatActivity {
                 && patterns.getBias() == CandlestickPatternAnalysis.Bias.BULLISH);
     }
 
-    private String buildStructureMentorNote(MarketStructureAnalysis context, MarketStructureAnalysis trigger) {
+    private String buildStructureMentorNote(
+            MarketStructureAnalysis context,
+            MarketStructureAnalysis trigger
+    ) {
         return "\n\nLeitura estrutural: no 15m a estrutura está " + translateTrend(context.getTrend())
                 + "; no 5m está " + translateTrend(trigger.getTrend())
                 + ". Evento recente: " + translateEvent(trigger.getEvent()) + ".";
     }
 
-    private String buildPatternMentorNote(CandlestickPatternAnalysis context, CandlestickPatternAnalysis trigger) {
+    private String buildPatternMentorNote(
+            CandlestickPatternAnalysis context,
+            CandlestickPatternAnalysis trigger
+    ) {
         return "\n\nPadrões de candles: 15m " + translatePatternBias(context.getBias())
                 + "; 5m " + translatePatternBias(trigger.getBias())
                 + ". Padrões isolados não autorizam entrada; use-os como confirmação da estrutura e do risco.";
@@ -241,12 +283,24 @@ public class MainActivity extends AppCompatActivity {
     private void render(AnalysisOutput output) {
         String status = "Fonte: " + output.sourceLabel + "\nAssistente de análise, risco e aprendizado ativo";
         if (!output.sourceWarning.isEmpty()) status += "\nAviso: " + output.sourceWarning;
+
         text(R.id.statusText).setText(status);
         text(R.id.regimeText).setText(formatMarket(output));
         text(R.id.strategyText).setText("Estratégia efetiva: " + output.effectiveDecision.getStrategyName());
-        text(R.id.decisionText).setText("Decisão: " + output.effectiveDecision.getAction().name()
-                + "\nConfiança: " + output.effectiveDecision.getConfidence() + "%"
-                + "\nMotivo: " + output.effectiveDecision.getRationale());
+        text(R.id.decisionText).setText(
+                "Decisão: " + output.effectiveDecision.getAction().name()
+                        + "\nConfiança: " + output.effectiveDecision.getConfidence() + "%"
+                        + "\nMotivo: " + output.effectiveDecision.getRationale()
+        );
+
+        CandleChartView chart = findViewById(R.id.candleChart);
+        chart.setAnalysis(
+                output.triggerCandles,
+                output.triggerStructure,
+                output.plan,
+                output.triggerPatterns
+        );
+
         text(R.id.multiTimeframeText).setText(formatMultiTimeframe(output.multiTimeframe));
         text(R.id.marketStructureText).setText(formatStructure(output.contextStructure, output.triggerStructure));
         text(R.id.candlestickPatternText).setText(formatPatterns(output.contextPatterns, output.triggerPatterns));
@@ -267,42 +321,68 @@ public class MainActivity extends AppCompatActivity {
         text(R.id.riskPlanText).setText(message == null ? "Erro desconhecido." : message);
         text(R.id.entrySetupText).setText("Setup intraday indisponível.");
         text(R.id.biasReviewText).setText("Revisão contra viés indisponível.");
+        CandleChartView chart = findViewById(R.id.candleChart);
+        if (chart != null) chart.clearAnalysis();
     }
 
-    private TextView text(int id) { return findViewById(id); }
+    private TextView text(int id) {
+        return findViewById(id);
+    }
 
     private String formatMarket(AnalysisOutput output) {
-        return String.format(Locale.US,
+        return String.format(
+                Locale.US,
                 "15m: %s | preço %.5f | RSI %.1f\n5m: %s | preço %.5f | RSI %.1f | ATR %.2f%%",
-                output.contextResult.getRegime().name(), output.context15m.getPrice(), output.context15m.getRsi(),
-                output.triggerResult.getRegime().name(), output.trigger5m.getPrice(), output.trigger5m.getRsi(),
-                output.trigger5m.getAtrPercent());
+                output.contextResult.getRegime().name(),
+                output.context15m.getPrice(),
+                output.context15m.getRsi(),
+                output.triggerResult.getRegime().name(),
+                output.trigger5m.getPrice(),
+                output.trigger5m.getRsi(),
+                output.trigger5m.getAtrPercent()
+        );
     }
 
     private String formatMultiTimeframe(MultiTimeframeAnalysis analysis) {
         return "Filtro multitemporal\nStatus: " + analysis.getStatus().name()
                 + "\nQualidade: " + analysis.getQualityScore() + "%"
-                + "\n" + analysis.getContextSummary() + "\n" + analysis.getTriggerSummary()
+                + "\n" + analysis.getContextSummary()
+                + "\n" + analysis.getTriggerSummary()
                 + "\n\nOrientação: " + analysis.getInstruction();
     }
 
-    private String formatStructure(MarketStructureAnalysis context, MarketStructureAnalysis trigger) {
+    private String formatStructure(
+            MarketStructureAnalysis context,
+            MarketStructureAnalysis trigger
+    ) {
         return "Estrutura de mercado\n15m: " + translateTrend(context.getTrend())
-                + " | topo " + context.getLastHighLabel() + " | fundo " + context.getLastLowLabel()
+                + " | topo " + context.getLastHighLabel()
+                + " | fundo " + context.getLastLowLabel()
                 + " | confiança " + context.getConfidence() + "%"
                 + "\n5m: " + translateTrend(trigger.getTrend())
-                + " | topo " + trigger.getLastHighLabel() + " | fundo " + trigger.getLastLowLabel()
+                + " | topo " + trigger.getLastHighLabel()
+                + " | fundo " + trigger.getLastLowLabel()
                 + " | evento " + translateEvent(trigger.getEvent())
-                + String.format(Locale.US, "\nSuporte: %.5f | Resistência: %.5f", trigger.getSupport(), trigger.getResistance())
+                + String.format(
+                        Locale.US,
+                        "\nSuporte: %.5f | Resistência: %.5f",
+                        trigger.getSupport(),
+                        trigger.getResistance()
+                )
                 + "\nLiquidez: " + formatLiquidity(trigger)
                 + "\n\nEvidências 5m:\n" + formatEvidence(trigger.getEvidence());
     }
 
-    private String formatPatterns(CandlestickPatternAnalysis context, CandlestickPatternAnalysis trigger) {
+    private String formatPatterns(
+            CandlestickPatternAnalysis context,
+            CandlestickPatternAnalysis trigger
+    ) {
         return "Padrões de candles"
-                + "\n15m: " + translatePatternBias(context.getBias()) + " | confiança " + context.getConfidence() + "%"
+                + "\n15m: " + translatePatternBias(context.getBias())
+                + " | confiança " + context.getConfidence() + "%"
                 + "\nDetectados: " + formatPatternNames(context.getPatterns())
-                + "\n\n5m: " + translatePatternBias(trigger.getBias()) + " | confiança " + trigger.getConfidence() + "%"
+                + "\n\n5m: " + translatePatternBias(trigger.getBias())
+                + " | confiança " + trigger.getConfidence() + "%"
                 + "\nDetectados: " + formatPatternNames(trigger.getPatterns())
                 + "\n\nLeitura 5m:\n" + formatEvidence(trigger.getEvidence());
     }
@@ -318,9 +398,15 @@ public class MainActivity extends AppCompatActivity {
     }
 
     private String formatLiquidity(MarketStructureAnalysis analysis) {
-        if (analysis.hasEqualHighs() && analysis.hasEqualLows()) return "acima dos topos e abaixo dos fundos equivalentes";
-        if (analysis.hasEqualHighs()) return "provável concentração acima dos topos equivalentes";
-        if (analysis.hasEqualLows()) return "provável concentração abaixo dos fundos equivalentes";
+        if (analysis.hasEqualHighs() && analysis.hasEqualLows()) {
+            return "acima dos topos e abaixo dos fundos equivalentes";
+        }
+        if (analysis.hasEqualHighs()) {
+            return "provável concentração acima dos topos equivalentes";
+        }
+        if (analysis.hasEqualLows()) {
+            return "provável concentração abaixo dos fundos equivalentes";
+        }
         return "nenhum agrupamento evidente nos pivôs recentes";
     }
 
@@ -370,31 +456,53 @@ public class MainActivity extends AppCompatActivity {
 
     private double parseNumber(String value) {
         String normalized = value.trim().replace(',', '.');
-        if (normalized.isEmpty()) throw new IllegalArgumentException("Preencha saldo e risco por operação.");
-        try { return Double.parseDouble(normalized); }
-        catch (NumberFormatException exception) { throw new IllegalArgumentException("Use apenas números válidos."); }
+        if (normalized.isEmpty()) {
+            throw new IllegalArgumentException("Preencha saldo e risco por operação.");
+        }
+        try {
+            return Double.parseDouble(normalized);
+        } catch (NumberFormatException exception) {
+            throw new IllegalArgumentException("Use apenas números válidos.");
+        }
     }
 
     private String formatPlan(TradePlan plan) {
-        if (!plan.isExecutable()) return "Plano de risco: BLOQUEADO\n" + plan.getNote();
-        return String.format(Locale.US,
+        if (!plan.isExecutable()) {
+            return "Plano de risco: BLOQUEADO\n" + plan.getNote();
+        }
+        return String.format(
+                Locale.US,
                 "Plano de risco: LIBERADO\nEntrada: %.5f\nStop loss: %.5f\nTake profit: %.5f\nRisco financeiro: %.2f\nTamanho estimado: %.2f unidades\n%s",
-                plan.getEntryPrice(), plan.getStopLoss(), plan.getTakeProfit(),
-                plan.getRiskAmount(), plan.getPositionUnits(), plan.getNote());
+                plan.getEntryPrice(),
+                plan.getStopLoss(),
+                plan.getTakeProfit(),
+                plan.getRiskAmount(),
+                plan.getPositionUnits(),
+                plan.getNote()
+        );
     }
 
     private String formatSetup(EntrySetup setup) {
         if (setup.getStatus() == EntrySetup.Status.BLOCKED) {
-            return "Setup de entrada: BLOQUEADO\n" + setup.getTriggerCondition() + "\n" + setup.getWarning();
+            return "Setup de entrada: BLOQUEADO\n"
+                    + setup.getTriggerCondition() + "\n" + setup.getWarning();
         }
-        return String.format(Locale.US,
+        return String.format(
+                Locale.US,
                 "Setup condicional de 15–30 min\nStatus: %s\nEstratégia: %s\nJanela estimada: até %d min\nZona de gatilho: %.5f\nInvalidação: %.5f\nConfirmação: %s\n\n%s",
-                setup.getStatus().name(), setup.getStrategyName(), setup.getWindowMinutes(),
-                setup.getTriggerPrice(), setup.getInvalidationPrice(), setup.getTriggerCondition(), setup.getWarning());
+                setup.getStatus().name(),
+                setup.getStrategyName(),
+                setup.getWindowMinutes(),
+                setup.getTriggerPrice(),
+                setup.getInvalidationPrice(),
+                setup.getTriggerCondition(),
+                setup.getWarning()
+        );
     }
 
     private String formatReview(TradeThesis thesis, ConfirmationReview review) {
-        return "Revisão contra viés de confirmação\nSua hipótese: " + thesis.name()
+        return "Revisão contra viés de confirmação"
+                + "\nSua hipótese: " + thesis.name()
                 + "\nVeredito: " + review.getVerdict().name()
                 + "\nAlinhamento: " + review.getAlignmentScore() + "%"
                 + "\n\nA favor:\n" + formatEvidence(review.getSupportingEvidence())
@@ -403,7 +511,9 @@ public class MainActivity extends AppCompatActivity {
     }
 
     private String formatEvidence(List<String> evidence) {
-        if (evidence == null || evidence.isEmpty()) return "• Nenhuma evidência relevante.";
+        if (evidence == null || evidence.isEmpty()) {
+            return "• Nenhuma evidência relevante.";
+        }
         StringBuilder builder = new StringBuilder();
         for (String item : evidence) {
             if (builder.length() > 0) builder.append('\n');
@@ -418,7 +528,12 @@ public class MainActivity extends AppCompatActivity {
         private final String sourceLabel;
         private final String warning;
 
-        private MarketDataLoad(List<Candle> contextCandles, List<Candle> triggerCandles, String sourceLabel, String warning) {
+        private MarketDataLoad(
+                List<Candle> contextCandles,
+                List<Candle> triggerCandles,
+                String sourceLabel,
+                String warning
+        ) {
             this.contextCandles = contextCandles;
             this.triggerCandles = triggerCandles;
             this.sourceLabel = sourceLabel;
@@ -429,6 +544,7 @@ public class MainActivity extends AppCompatActivity {
     private static final class AnalysisOutput {
         private final String sourceLabel;
         private final String sourceWarning;
+        private final List<Candle> triggerCandles;
         private final MarketSnapshot context15m;
         private final MarketSnapshot trigger5m;
         private final StrategySelector.SelectionResult contextResult;
@@ -447,8 +563,11 @@ public class MainActivity extends AppCompatActivity {
         private final ConfirmationReview review;
 
         private AnalysisOutput(
-                String sourceLabel, String sourceWarning,
-                MarketSnapshot context15m, MarketSnapshot trigger5m,
+                String sourceLabel,
+                String sourceWarning,
+                List<Candle> triggerCandles,
+                MarketSnapshot context15m,
+                MarketSnapshot trigger5m,
                 StrategySelector.SelectionResult contextResult,
                 StrategySelector.SelectionResult triggerResult,
                 StrategyDecision effectiveDecision,
@@ -457,11 +576,16 @@ public class MainActivity extends AppCompatActivity {
                 MarketStructureAnalysis triggerStructure,
                 CandlestickPatternAnalysis contextPatterns,
                 CandlestickPatternAnalysis triggerPatterns,
-                SetupAssessment assessment, String mentorExplanation,
-                TradePlan plan, EntrySetup setup, TradeThesis thesis, ConfirmationReview review
+                SetupAssessment assessment,
+                String mentorExplanation,
+                TradePlan plan,
+                EntrySetup setup,
+                TradeThesis thesis,
+                ConfirmationReview review
         ) {
             this.sourceLabel = sourceLabel;
             this.sourceWarning = sourceWarning;
+            this.triggerCandles = new ArrayList<>(triggerCandles);
             this.context15m = context15m;
             this.trigger5m = trigger5m;
             this.contextResult = contextResult;
