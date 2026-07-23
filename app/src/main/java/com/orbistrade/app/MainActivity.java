@@ -1,5 +1,6 @@
 package com.orbistrade.app;
 
+import android.content.Intent;
 import android.os.Bundle;
 import android.widget.Button;
 import android.widget.EditText;
@@ -32,8 +33,12 @@ public class MainActivity extends AppCompatActivity {
         EditText balanceInput = findViewById(R.id.balanceInput);
         EditText riskInput = findViewById(R.id.riskInput);
         Button analyzeButton = findViewById(R.id.analyzeButton);
+        Button apiSettingsButton = findViewById(R.id.apiSettingsButton);
 
         analyzeButton.setOnClickListener(view -> analyze(balanceInput, riskInput));
+        apiSettingsButton.setOnClickListener(view ->
+                startActivity(new Intent(this, ApiSettingsActivity.class))
+        );
         analyze(balanceInput, riskInput);
     }
 
