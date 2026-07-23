@@ -28,11 +28,18 @@
             android:text="Inicializando motor..."
             android:textAppearance="@style/TextAppearance.Material3.BodyLarge" />
 
+        <Button
+            android:id="@+id/apiSettingsButton"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="20dp"
+            android:text="Configurar APIs" />
+
         <EditText
             android:id="@+id/balanceInput"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:layout_marginTop="28dp"
+            android:layout_marginTop="16dp"
             android:hint="Saldo da conta"
             android:inputType="numberDecimal"
             android:text="10000" />
