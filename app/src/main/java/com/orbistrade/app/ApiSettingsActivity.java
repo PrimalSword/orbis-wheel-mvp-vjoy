@@ -12,6 +12,7 @@ import com.orbistrade.app.data.settings.ApiKeyStore;
 
 public class ApiSettingsActivity extends AppCompatActivity {
     private ApiKeyStore apiKeyStore;
+    private boolean keysVisible;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -44,17 +45,17 @@ public class ApiSettingsActivity extends AppCompatActivity {
         });
 
         toggleButton.setOnClickListener(view -> {
-            boolean hidden = geminiInput.getInputType() != InputType.TYPE_CLASS_TEXT;
-            int type = hidden
-                    ? InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_VARIATION_VISIBLE_PASSWORD
-                    : InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_VARIATION_PASSWORD;
+            keysVisible = !keysVisible;
+            int type = InputType.TYPE_CLASS_TEXT | (keysVisible
+                    ? InputType.TYPE_TEXT_VARIATION_VISIBLE_PASSWORD
+                    : InputType.TYPE_TEXT_VARIATION_PASSWORD);
             geminiInput.setInputType(type);
             marketInput.setInputType(type);
             brokerInput.setInputType(type);
             geminiInput.setSelection(geminiInput.length());
             marketInput.setSelection(marketInput.length());
             brokerInput.setSelection(brokerInput.length());
-            toggleButton.setText(hidden ? "Ocultar chaves" : "Mostrar chaves");
+            toggleButton.setText(keysVisible ? "Ocultar chaves" : "Mostrar chaves");
         });
     }
 
