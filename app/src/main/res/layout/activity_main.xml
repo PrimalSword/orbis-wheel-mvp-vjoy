@@ -91,7 +91,7 @@
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:layout_marginTop="16dp"
-            android:text="Analisar mercado" />
+            android:text="Montar setup de 15–30 min" />
 
         <TextView
             android:id="@+id/regimeText"
@@ -126,6 +126,16 @@
             android:padding="16dp"
             android:text="Plano de risco: --"
             android:textAppearance="@style/TextAppearance.Material3.BodyLarge" />
+
+        <TextView
+            android:id="@+id/entrySetupText"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="12dp"
+            android:padding="16dp"
+            android:text="Setup condicional de entrada: --"
+            android:textAppearance="@style/TextAppearance.Material3.BodyLarge"
+            android:textStyle="bold" />
 
         <TextView
             android:id="@+id/biasReviewText"
