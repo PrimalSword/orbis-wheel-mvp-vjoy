@@ -129,6 +129,16 @@
             android:textStyle="bold" />
 
         <TextView
+            android:id="@+id/marketStructureText"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="12dp"
+            android:padding="16dp"
+            android:text="Estrutura de mercado: --"
+            android:textAppearance="@style/TextAppearance.Material3.BodyLarge"
+            android:textStyle="bold" />
+
+        <TextView
             android:id="@+id/setupScoreText"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
