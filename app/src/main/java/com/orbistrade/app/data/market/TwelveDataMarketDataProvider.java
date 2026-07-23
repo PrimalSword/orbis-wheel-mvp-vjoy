@@ -164,7 +164,7 @@ public final class TwelveDataMarketDataProvider implements MarketDataProvider {
         return builder.toString();
     }
 
-    private String encode(String value) {
-        return URLEncoder.encode(value, StandardCharsets.UTF_8);
+    private String encode(String value) throws IOException {
+        return URLEncoder.encode(value, "UTF-8");
     }
 }
