@@ -7,6 +7,9 @@ import android.widget.TextView;
 
 import androidx.appcompat.app.AppCompatActivity;
 
+import com.orbistrade.app.data.market.DemoMarketDataProvider;
+import com.orbistrade.app.data.market.MarketDataProvider;
+import com.orbistrade.app.domain.market.MarketSnapshotFactory;
 import com.orbistrade.app.domain.model.MarketSnapshot;
 import com.orbistrade.app.domain.risk.RiskManager;
 import com.orbistrade.app.domain.risk.RiskProfile;
@@ -18,14 +21,8 @@ import java.util.Locale;
 
 public class MainActivity extends AppCompatActivity {
 
-    private final MarketSnapshot demoSnapshot = new MarketSnapshot(
-            "EUR/USD",
-            1.0890,
-            1.0875,
-            1.0810,
-            58.0,
-            0.85
-    );
+    private final MarketDataProvider marketDataProvider = new DemoMarketDataProvider();
+    private final MarketSnapshotFactory snapshotFactory = new MarketSnapshotFactory();
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -51,14 +48,30 @@ public class MainActivity extends AppCompatActivity {
             double balance = parseNumber(balanceInput.getText().toString());
             double riskPercent = parseNumber(riskInput.getText().toString());
 
-            StrategySelector.SelectionResult result = new StrategySelector().analyze(demoSnapshot);
+            MarketSnapshot snapshot = snapshotFactory.create(
+                    "EUR/USD",
+                    marketDataProvider.getCandles("EUR/USD", "1h", 240)
+            );
+
+            StrategySelector.SelectionResult result = new StrategySelector().analyze(snapshot);
             StrategyDecision decision = result.getDecision();
 
             RiskProfile profile = new RiskProfile(balance, riskPercent, 2.0, 1.5);
-            TradePlan plan = new RiskManager().buildPlan(demoSnapshot, decision, profile);
+            TradePlan plan = new RiskManager().buildPlan(snapshot, decision, profile);
 
-            statusText.setText("Motor adaptativo e gestão de risco ativos");
-            regimeText.setText("Regime: " + result.getRegime().name());
+            statusText.setText("Dados, indicadores, estratégia e risco ativos");
+            regimeText.setText(
+                    String.format(
+                            Locale.US,
+                            "Regime: %s\nPreço: %.5f | EMA20: %.5f | EMA200: %.5f\nRSI: %.1f | ATR: %.2f%%",
+                            result.getRegime().name(),
+                            snapshot.getPrice(),
+                            snapshot.getEma20(),
+                            snapshot.getEma200(),
+                            snapshot.getRsi(),
+                            snapshot.getAtrPercent()
+                    )
+            );
             strategyText.setText("Estratégia: " + decision.getStrategyName());
             decisionText.setText(
                     "Decisão: " + decision.getAction().name()
@@ -68,7 +81,7 @@ public class MainActivity extends AppCompatActivity {
 
             riskPlanText.setText(formatPlan(plan));
         } catch (IllegalArgumentException exception) {
-            statusText.setText("Revise os dados de risco");
+            statusText.setText("Não foi possível concluir a análise");
             riskPlanText.setText(exception.getMessage());
         }
     }
