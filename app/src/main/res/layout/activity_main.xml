@@ -35,6 +35,39 @@
             android:layout_marginTop="20dp"
             android:text="Configurar APIs" />
 
+        <TextView
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="20dp"
+            android:text="Qual é a sua hipótese antes da análise?"
+            android:textAppearance="@style/TextAppearance.Material3.TitleMedium" />
+
+        <RadioGroup
+            android:id="@+id/thesisGroup"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="horizontal">
+
+            <RadioButton
+                android:id="@+id/thesisBuy"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="Compra" />
+
+            <RadioButton
+                android:id="@+id/thesisSell"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="Venda" />
+
+            <RadioButton
+                android:id="@+id/thesisNeutral"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:checked="true"
+                android:text="Neutro" />
+        </RadioGroup>
+
         <EditText
             android:id="@+id/balanceInput"
             android:layout_width="match_parent"
@@ -92,6 +125,15 @@
             android:layout_marginTop="12dp"
             android:padding="16dp"
             android:text="Plano de risco: --"
+            android:textAppearance="@style/TextAppearance.Material3.BodyLarge" />
+
+        <TextView
+            android:id="@+id/biasReviewText"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="12dp"
+            android:padding="16dp"
+            android:text="Revisão contra viés de confirmação: --"
             android:textAppearance="@style/TextAppearance.Material3.BodyLarge" />
 
     </LinearLayout>
