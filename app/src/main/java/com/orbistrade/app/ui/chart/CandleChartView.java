@@ -17,7 +17,6 @@ import com.orbistrade.app.domain.risk.TradePlan;
 import com.orbistrade.app.domain.structure.MarketStructureAnalysis;
 
 import java.util.ArrayList;
-import java.util.Collections;
 import java.util.List;
 import java.util.Locale;
 
@@ -49,12 +48,8 @@ public final class CandleChartView extends View {
         setContentDescription("Gráfico de candles de cinco minutos com estrutura, suporte, resistência, entrada, stop e alvo.");
     }
 
-    public void setAnalysis(
-            List<Candle> source,
-            MarketStructureAnalysis structure,
-            TradePlan plan,
-            CandlestickPatternAnalysis patterns
-    ) {
+    public void setAnalysis(List<Candle> source, MarketStructureAnalysis structure,
+                            TradePlan plan, CandlestickPatternAnalysis patterns) {
         candles.clear();
         if (source != null && !source.isEmpty()) {
             int start = Math.max(0, source.size() - MAX_CANDLES);
@@ -85,9 +80,9 @@ public final class CandleChartView extends View {
         }
 
         float left = dp(12);
-        float right = getWidth() - dp(58);
-        float top = dp(22);
-        float bottom = getHeight() - dp(28);
+        float right = getWidth() - dp(66);
+        float top = dp(48);
+        float bottom = getHeight() - dp(34);
         if (right <= left || bottom <= top) return;
 
         double min = Double.POSITIVE_INFINITY;
@@ -109,22 +104,36 @@ public final class CandleChartView extends View {
         min -= range * 0.08;
         max += range * 0.08;
 
+        drawLegend(canvas, left, dp(10));
         drawGrid(canvas, left, right, top, bottom, min, max);
         drawCandles(canvas, left, right, top, bottom, min, max);
         drawPivots(canvas, left, right, top, bottom, min, max);
 
         if (structure != null) {
-            drawPriceLine(canvas, left, right, top, bottom, min, max, structure.getSupport(), "SUP", Color.rgb(66, 165, 245), false);
-            drawPriceLine(canvas, left, right, top, bottom, min, max, structure.getResistance(), "RES", Color.rgb(255, 167, 38), false);
+            drawPriceLine(canvas, left, right, top, bottom, min, max,
+                    structure.getSupport(), "SUPORTE", Color.rgb(41, 121, 255), false, dp(1.8f));
+            drawPriceLine(canvas, left, right, top, bottom, min, max,
+                    structure.getResistance(), "RESIST.", Color.rgb(255, 143, 0), false, dp(1.8f));
             drawStructureEvent(canvas, right, top);
         }
         if (plan != null && plan.isExecutable()) {
-            drawPriceLine(canvas, left, right, top, bottom, min, max, plan.getEntryPrice(), "ENTRADA", Color.rgb(171, 71, 188), true);
-            drawPriceLine(canvas, left, right, top, bottom, min, max, plan.getStopLoss(), "STOP", Color.rgb(239, 83, 80), true);
-            drawPriceLine(canvas, left, right, top, bottom, min, max, plan.getTakeProfit(), "ALVO", Color.rgb(38, 166, 154), true);
+            drawPriceLine(canvas, left, right, top, bottom, min, max,
+                    plan.getEntryPrice(), "ENTRADA", Color.rgb(171, 71, 188), true, dp(1.5f));
+            drawPriceLine(canvas, left, right, top, bottom, min, max,
+                    plan.getStopLoss(), "STOP", Color.rgb(244, 67, 54), true, dp(1.5f));
+            drawPriceLine(canvas, left, right, top, bottom, min, max,
+                    plan.getTakeProfit(), "ALVO", Color.rgb(0, 200, 83), true, dp(1.5f));
         }
         drawPatternBadge(canvas, left, top);
-        drawLatestPrice(canvas, right, top, bottom, min, max);
+        drawLatestPrice(canvas, left, right, top, bottom, min, max);
+    }
+
+    private void drawLegend(Canvas canvas, float left, float top) {
+        textPaint.setTextSize(dp(8));
+        textPaint.setColor(resolveColor(android.R.attr.textColorSecondary, Color.LTGRAY));
+        String legend = "HH topo maior  •  HL fundo maior  •  LH topo menor  •  LL fundo menor";
+        canvas.drawText(legend, left, top + dp(9), textPaint);
+        canvas.drawText("BOS = rompimento  •  CHoCH = possível mudança de tendência", left, top + dp(22), textPaint);
     }
 
     private void drawGrid(Canvas canvas, float left, float right, float top, float bottom, double min, double max) {
@@ -138,13 +147,13 @@ public final class CandleChartView extends View {
             float y = top + (bottom - top) * i / 4f;
             canvas.drawLine(left, y, right, y, paint);
             double price = max - (max - min) * i / 4d;
-            canvas.drawText(String.format(Locale.US, "%.5f", price), right + dp(4), y + dp(3), textPaint);
+            canvas.drawText(formatPrice(price), right + dp(5), y + dp(3), textPaint);
         }
     }
 
     private void drawCandles(Canvas canvas, float left, float right, float top, float bottom, double min, double max) {
         float slot = (right - left) / candles.size();
-        float bodyWidth = Math.max(dp(2), slot * 0.62f);
+        float bodyWidth = Math.max(dp(3), Math.min(dp(9), slot * 0.74f));
         for (int i = 0; i < candles.size(); i++) {
             Candle candle = candles.get(i);
             float x = left + slot * i + slot / 2f;
@@ -153,18 +162,19 @@ public final class CandleChartView extends View {
             float openY = y(candle.getOpen(), top, bottom, min, max);
             float closeY = y(candle.getClose(), top, bottom, min, max);
             boolean bullish = candle.getClose() >= candle.getOpen();
-            int color = bullish ? Color.rgb(38, 166, 154) : Color.rgb(239, 83, 80);
+            int color = bullish ? Color.rgb(0, 200, 83) : Color.rgb(244, 67, 54);
 
             paint.setColor(color);
-            paint.setStrokeWidth(Math.max(dp(0.8f), slot * 0.08f));
+            paint.setStrokeWidth(Math.max(dp(1.1f), slot * 0.12f));
             paint.setStyle(Paint.Style.STROKE);
             canvas.drawLine(x, highY, x, lowY, paint);
 
             paint.setStyle(Paint.Style.FILL);
             float bodyTop = Math.min(openY, closeY);
             float bodyBottom = Math.max(openY, closeY);
-            if (bodyBottom - bodyTop < dp(1.5f)) bodyBottom = bodyTop + dp(1.5f);
-            canvas.drawRect(new RectF(x - bodyWidth / 2f, bodyTop, x + bodyWidth / 2f, bodyBottom), paint);
+            if (bodyBottom - bodyTop < dp(2)) bodyBottom = bodyTop + dp(2);
+            canvas.drawRoundRect(new RectF(x - bodyWidth / 2f, bodyTop, x + bodyWidth / 2f, bodyBottom),
+                    dp(0.8f), dp(0.8f), paint);
         }
     }
 
@@ -201,18 +211,19 @@ public final class CandleChartView extends View {
     }
 
     private void drawPriceLine(Canvas canvas, float left, float right, float top, float bottom,
-                               double min, double max, double price, String label, int color, boolean dashed) {
+                               double min, double max, double price, String label, int color,
+                               boolean dashed, float strokeWidth) {
         if (!Double.isFinite(price) || price <= 0 || price < min || price > max) return;
-        float y = y(price, top, bottom, min, max);
+        float lineY = y(price, top, bottom, min, max);
         paint.setStyle(Paint.Style.STROKE);
-        paint.setStrokeWidth(dp(1));
+        paint.setStrokeWidth(strokeWidth);
         paint.setColor(color);
         paint.setPathEffect(dashed ? new DashPathEffect(new float[]{dp(7), dp(5)}, 0) : null);
-        canvas.drawLine(left, y, right, y, paint);
+        canvas.drawLine(left, lineY, right, lineY, paint);
         paint.setPathEffect(null);
         textPaint.setColor(color);
         textPaint.setTextSize(dp(8));
-        canvas.drawText(label, left + dp(3), y - dp(3), textPaint);
+        canvas.drawText(label, left + dp(3), lineY - dp(4), textPaint);
     }
 
     private void drawStructureEvent(Canvas canvas, float right, float top) {
@@ -226,7 +237,7 @@ public final class CandleChartView extends View {
         }
         textPaint.setColor(resolveColor(android.R.attr.textColorPrimary, Color.WHITE));
         textPaint.setTextSize(dp(10));
-        canvas.drawText(event, right - dp(54), top + dp(12), textPaint);
+        canvas.drawText(event, right - dp(58), top + dp(14), textPaint);
     }
 
     private void drawPatternBadge(Canvas canvas, float left, float top) {
@@ -236,18 +247,39 @@ public final class CandleChartView extends View {
         textPaint.setTextSize(dp(9));
         float width = textPaint.measureText(label) + dp(12);
         paint.setStyle(Paint.Style.FILL);
-        paint.setColor(withAlpha(resolveColor(android.R.attr.colorAccent, Color.MAGENTA), 48));
+        paint.setColor(withAlpha(resolveColor(android.R.attr.colorAccent, Color.MAGENTA), 58));
         canvas.drawRoundRect(new RectF(left, top, left + width, top + dp(20)), dp(8), dp(8), paint);
         textPaint.setColor(resolveColor(android.R.attr.textColorPrimary, Color.WHITE));
         canvas.drawText(label, left + dp(6), top + dp(14), textPaint);
     }
 
-    private void drawLatestPrice(Canvas canvas, float right, float top, float bottom, double min, double max) {
+    private void drawLatestPrice(Canvas canvas, float left, float right, float top, float bottom, double min, double max) {
         Candle latest = candles.get(candles.size() - 1);
-        float y = y(latest.getClose(), top, bottom, min, max);
-        paint.setColor(resolveColor(android.R.attr.colorAccent, Color.CYAN));
+        float priceY = y(latest.getClose(), top, bottom, min, max);
+        int color = latest.getClose() >= latest.getOpen() ? Color.rgb(0, 200, 83) : Color.rgb(244, 67, 54);
+
+        paint.setColor(withAlpha(color, 145));
+        paint.setStyle(Paint.Style.STROKE);
+        paint.setStrokeWidth(dp(1));
+        paint.setPathEffect(new DashPathEffect(new float[]{dp(3), dp(4)}, 0));
+        canvas.drawLine(left, priceY, right, priceY, paint);
+        paint.setPathEffect(null);
+
+        String label = formatPrice(latest.getClose());
+        textPaint.setTextSize(dp(9));
+        float width = textPaint.measureText(label) + dp(10);
+        RectF tag = new RectF(right + dp(2), priceY - dp(10), right + dp(2) + width, priceY + dp(10));
         paint.setStyle(Paint.Style.FILL);
-        canvas.drawCircle(right, y, dp(3), paint);
+        paint.setColor(color);
+        canvas.drawRoundRect(tag, dp(4), dp(4), paint);
+        textPaint.setColor(Color.WHITE);
+        canvas.drawText(label, tag.left + dp(5), priceY + dp(3), textPaint);
+    }
+
+    private String formatPrice(double price) {
+        double abs = Math.abs(price);
+        int decimals = abs >= 1000 ? 2 : abs >= 10 ? 3 : 5;
+        return String.format(Locale.US, "%." + decimals + "f", price);
     }
 
     private void drawCenteredMessage(Canvas canvas, String message) {
