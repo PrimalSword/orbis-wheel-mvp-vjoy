@@ -14,17 +14,36 @@ public final class StrategySelector {
         this.regimeDetector = new MarketRegimeDetector();
         this.strategies = Arrays.asList(
                 new TrendFollowingStrategy(),
+                new TrendPullbackStrategy(),
+                new VolatilityBreakoutStrategy(),
                 new RangeReversionStrategy()
         );
     }
 
     public SelectionResult analyze(MarketSnapshot snapshot) {
         MarketRegime regime = regimeDetector.detect(snapshot);
+        StrategyDecision bestActionable = null;
+        StrategyDecision bestWait = null;
 
         for (TradingStrategy strategy : strategies) {
-            if (strategy.supports(regime)) {
-                return new SelectionResult(regime, strategy.evaluate(snapshot));
+            if (!strategy.supports(regime)) continue;
+
+            StrategyDecision candidate = strategy.evaluate(snapshot);
+            if (candidate.getAction() == StrategyDecision.Action.WAIT) {
+                if (bestWait == null || candidate.getConfidence() > bestWait.getConfidence()) {
+                    bestWait = candidate;
+                }
+            } else if (bestActionable == null || candidate.getConfidence() > bestActionable.getConfidence()) {
+                bestActionable = candidate;
             }
+        }
+
+        if (bestActionable != null) {
+            return new SelectionResult(regime, bestActionable);
+        }
+
+        if (bestWait != null) {
+            return new SelectionResult(regime, bestWait);
         }
 
         StrategyDecision fallback = new StrategyDecision(
