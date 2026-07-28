@@ -9,7 +9,11 @@ if (-not (Get-Command py -ErrorAction SilentlyContinue)) {
 py -3 -m venv .venv
 & .\.venv\Scripts\python.exe -m pip install --upgrade pip
 & .\.venv\Scripts\python.exe -m pip install -e .
-& .\.venv\Scripts\python.exe -m pip install -r requirements-mt5.txt
+& .\.venv\Scripts\python.exe -m pip install -r requirements-providers.txt
+
+if ($IsWindows -or $env:OS -eq "Windows_NT") {
+    & .\.venv\Scripts\python.exe -m pip install -r requirements-mt5.txt
+}
 
 if (-not (Test-Path .env)) {
     Copy-Item .env.example .env

@@ -5,8 +5,12 @@ Regra: nenhuma fase seguinte começa antes da validação prática da fase atual
 ## Fase 1 — Orbis Feed
 
 - [x] Serviço independente para o mini PC
-- [x] Provider MetaTrader 5 para dados reais sem limite de chave HTTP
+- [x] Núcleo desacoplado da fonte de dados
 - [x] Provider sintético para validação offline
+- [x] Provider CSV para importação universal e offline
+- [x] Provider Yahoo Finance para ações, ETFs, índices, câmbio e cripto
+- [x] Provider Binance para cripto via endpoint público, sem chave
+- [x] Provider MetaTrader 5 como opção adicional
 - [x] SQLite local em WAL
 - [x] Múltiplos símbolos e timeframes
 - [x] Coleta inicial e incremental
@@ -14,9 +18,9 @@ Regra: nenhuma fase seguinte começa antes da validação prática da fase atual
 - [x] Exclusão de candles ainda abertos
 - [x] Logs rotativos, heartbeat e estado por fluxo
 - [x] Instalação e inicialização automática no Windows
-- [x] Testes automatizados do núcleo
+- [x] Testes automatizados do núcleo e dos providers
 - [ ] **VALIDAÇÃO NO MINI PC**
-- [ ] **VALIDAÇÃO COM FEED REAL DA CORRETORA**
+- [ ] **VALIDAÇÃO COM AO MENOS UM FEED ONLINE SEM METATRADER**
 
 ## Fase 2 — Orbis Scanner
 
