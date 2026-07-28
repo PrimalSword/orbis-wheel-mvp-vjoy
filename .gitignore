@@ -8,3 +8,15 @@
 .externalNativeBuild/
 .cxx/
 app/build/
+
+# Orbis Feed / Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+.env
+services/orbis-feed/data/
+services/orbis-feed/logs/
+*.db
+*.db-shm
+*.db-wal
