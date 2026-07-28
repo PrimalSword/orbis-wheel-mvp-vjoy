@@ -59,6 +59,11 @@ class FeedConfig:
     overlap_bars: int
     max_batch_bars: int
     close_grace_seconds: int
+    request_timeout_seconds: int
+    csv_directory: Path
+    csv_pattern: str
+    binance_base_url: str
+    yahoo_auto_adjust: bool
     mt5_path: str | None
     mt5_login: int | None
     mt5_password: str | None
@@ -75,9 +80,10 @@ class FeedConfig:
         source = dict(_parse_env_file(Path(env_file))) if env_file else {}
         source.update(dict(os.environ if environ is None else environ))
 
-        provider = source.get("ORBIS_FEED_PROVIDER", "mt5").strip().lower()
-        if provider not in {"mt5", "synthetic"}:
-            raise ValueError("ORBIS_FEED_PROVIDER deve ser 'mt5' ou 'synthetic'")
+        provider = source.get("ORBIS_FEED_PROVIDER", "synthetic").strip().lower()
+        allowed = {"synthetic", "csv", "yahoo", "binance", "mt5"}
+        if provider not in allowed:
+            raise ValueError(f"ORBIS_FEED_PROVIDER deve ser um de: {', '.join(sorted(allowed))}")
 
         symbols = _csv(source.get("ORBIS_FEED_SYMBOLS", "EURUSD,GBPUSD,USDJPY,XAUUSD"))
         if not symbols:
@@ -93,8 +99,8 @@ class FeedConfig:
         root = Path(source.get("ORBIS_FEED_HOME", ".")).expanduser().resolve()
         data_dir = root / "data"
         log_dir = root / "logs"
-
         login_raw = source.get("ORBIS_MT5_LOGIN", "").strip()
+
         return cls(
             provider=provider,
             symbols=symbols,
@@ -107,6 +113,11 @@ class FeedConfig:
             overlap_bars=_as_int(source.get("ORBIS_FEED_OVERLAP_BARS"), 5, 1),
             max_batch_bars=_as_int(source.get("ORBIS_FEED_MAX_BATCH_BARS"), 100_000, 100),
             close_grace_seconds=_as_int(source.get("ORBIS_FEED_CLOSE_GRACE_SECONDS"), 2, 0),
+            request_timeout_seconds=_as_int(source.get("ORBIS_FEED_REQUEST_TIMEOUT_SECONDS"), 20, 1),
+            csv_directory=Path(source.get("ORBIS_CSV_DIRECTORY", data_dir / "imports")).expanduser().resolve(),
+            csv_pattern=source.get("ORBIS_CSV_PATTERN", "{symbol}_{timeframe}.csv"),
+            binance_base_url=source.get("ORBIS_BINANCE_BASE_URL", "https://api.binance.com").rstrip("/"),
+            yahoo_auto_adjust=_as_bool(source.get("ORBIS_YAHOO_AUTO_ADJUST"), False),
             mt5_path=source.get("ORBIS_MT5_PATH") or None,
             mt5_login=int(login_raw) if login_raw else None,
             mt5_password=source.get("ORBIS_MT5_PASSWORD") or None,
@@ -119,3 +130,4 @@ class FeedConfig:
         self.database_path.parent.mkdir(parents=True, exist_ok=True)
         self.log_path.parent.mkdir(parents=True, exist_ok=True)
         self.heartbeat_path.parent.mkdir(parents=True, exist_ok=True)
+        self.csv_directory.mkdir(parents=True, exist_ok=True)
