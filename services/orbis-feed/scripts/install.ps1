@@ -6,7 +6,7 @@ if (-not (Get-Command py -ErrorAction SilentlyContinue)) {
     throw "Python Launcher (py) não encontrado. Instale Python 3.11+ x64."
 }
 
-py -3.11 -m venv .venv
+py -3 -m venv .venv
 & .\.venv\Scripts\python.exe -m pip install --upgrade pip
 & .\.venv\Scripts\python.exe -m pip install -e .
 & .\.venv\Scripts\python.exe -m pip install -r requirements-mt5.txt
